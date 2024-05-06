@@ -34,7 +34,7 @@ const getAllStates = async (req, res) => {
         // Merge MongoDB data into the combined array
         mongodbStatesData.forEach(mongodbState => {
             const existingStateIndex = combinedStatesData.findIndex(state => state.code === mongodbState.stateCode);
-            if (existingStateIndex !== -1) {
+            if (existingStateIndex !== -1 && Array.isArray(mongodbState.funfacts) && mongodbState.funfacts.length > 0) {
                 combinedStatesData[existingStateIndex].funfacts = mongodbState.funfacts;
             }
         });
@@ -63,16 +63,16 @@ const getOneState = async (req, res) => {
         // Merge MongoDB data into the combined array
         mongodbStatesData.forEach(mongodbState => {
             const existingStateIndex = combinedStatesData.findIndex(st => st.code === mongodbState.stateCode);
-            if (existingStateIndex !== -1) {
+            if (existingStateIndex !== -1 && Array.isArray(mongodbState.funfacts) && mongodbState.funfacts.length > 0) {
                 combinedStatesData[existingStateIndex].funfacts = mongodbState.funfacts;
             }
         });
 
         // Remove other states
-        combinedStatesData = combinedStatesData.filter(st => st.code === state.toUpperCase());
+        const singleStateData = combinedStatesData.find(st => st.code === state.toUpperCase());
 
         // Send the combined data as a JSON response
-        res.json(combinedStatesData);
+        res.json(singleStateData);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });
@@ -215,9 +215,24 @@ const replaceFunFact = async (req, res) => {
     // find state to update funfact
     const state = await States.findOne({ stateCode: req.params.state }).exec();
 
-    // replace funfact in array
-    state.funfacts[index] = req.body.funfact;
+    // Get state name from JSON data for no index response
+    const jsonStatesData = data.states;
 
+    let jsonState = jsonStatesData.find(st => st.code === state.toUpperCase());
+
+    const stateName = jsonState.state;
+
+    // Check if funfact array exists. If so, check if the index exists. If not, return JSON saying they don't exist.
+    if (Array.isArray(state.funfacts) && state.funfacts.length > 0) {
+        // replace funfact in array
+        if (typeof state.funfacts[index] !== 'undefined'){
+            state.funfacts[index] = req.body.funfact;
+        } else {
+            return res.status(400).json({ "message": `No Fun Fact found at that index for ${stateName}` });
+        }
+    } else {
+        return res.status(400).json({ "message": `No Fun Facts found for ${stateName}` });
+    }
     // save and return response from mongodb
     const result = await state.save();
 
@@ -236,16 +251,18 @@ const deleteFunFact = async (req, res) => {
     // subtract 1 from index value
     const index = req.body.index - 1;
 
-    // find state to delete funfact
-    const state = await States.findOne({ stateCode: req.params.state }).exec();
+    try {
+        // delete funfact from array in the database
+        const result = await States.updateOne(
+            { stateCode: req.params.state.toUpperCase() },
+            { $pull: { funfacts: { $exists: true, $in: [null, ""] } } }
+        );
 
-    // delete funfact from array
-    state.funfacts.splice(index, 1);
-
-    // save and return response from mongodb
-    const result = await state.save();
-
-    res.json(result);
+        res.json(result);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ "message": "Internal server error" });
+    }
 }
 
 module.exports = {

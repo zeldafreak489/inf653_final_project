@@ -166,6 +166,10 @@ const addFunFacts = async (req, res) => {
     const { state } = req.params;
     const { funfacts } = req.body;
 
+    if (!req?.body?.funfacts) {
+        return res.status(400).json({ "message": "State fun facts value required" });
+    }
+
     // Check if funfacts is an array
     if (!Array.isArray(funfacts)) {
         return res.status(400).json( {"message": "State fun facts value must be an array"} );
@@ -199,6 +203,8 @@ const addFunFacts = async (req, res) => {
 
 // replace fun fact
 const replaceFunFact = async (req, res) => {
+    const { state } = req.params;
+
     // check if index in body
     if (!req?.body?.index) {
         return res.status(400).json({ "message": "State fun fact index value required" });
@@ -212,9 +218,6 @@ const replaceFunFact = async (req, res) => {
     // subtract 1 from index value
     const index = req.body.index - 1;
 
-    // find state to update funfact
-    const state = await States.findOne({ stateCode: req.params.state }).exec();
-
     // Get state name from JSON data for no index response
     const jsonStatesData = data.states;
 
@@ -222,11 +225,14 @@ const replaceFunFact = async (req, res) => {
 
     const stateName = jsonState.state;
 
+    // find state to update funfact
+    const stateToUpdate = await States.findOne({ stateCode: state.toUpperCase() }).exec();
+
     // Check if funfact array exists. If so, check if the index exists. If not, return JSON saying they don't exist.
-    if (Array.isArray(state.funfacts) && state.funfacts.length > 0) {
+    if (stateToUpdate.funfacts !== null && stateToUpdate.funfacts.length > 0 && Array.isArray(stateToUpdate.funfacts)) {
         // replace funfact in array
-        if (typeof state.funfacts[index] !== 'undefined'){
-            state.funfacts[index] = req.body.funfact;
+        if (typeof stateToUpdate.funfacts[index] !== 'undefined' && stateToUpdate.funfacts.length > index){
+            stateToUpdate.funfacts[index] = req.body.funfact;
         } else {
             return res.status(400).json({ "message": `No Fun Fact found at that index for ${stateName}` });
         }
@@ -234,7 +240,7 @@ const replaceFunFact = async (req, res) => {
         return res.status(400).json({ "message": `No Fun Facts found for ${stateName}` });
     }
     // save and return response from mongodb
-    const result = await state.save();
+    const result = await stateToUpdate.save();
 
     res.json(result);
 }
@@ -243,6 +249,8 @@ const replaceFunFact = async (req, res) => {
 
 // Delete funfact
 const deleteFunFact = async (req, res) => {
+    const { state } = req.params;
+
     // check if index in body
     if (!req?.body?.index) {
         return res.status(400).json({ "message": "State fun fact index value required" });
@@ -251,14 +259,34 @@ const deleteFunFact = async (req, res) => {
     // subtract 1 from index value
     const index = req.body.index - 1;
 
+    // Get state name from JSON data for no index response
+    const jsonStatesData = data.states;
+
+    let jsonState = jsonStatesData.find(st => st.code === state.toUpperCase());
+
+    const stateName = jsonState.state;
+
     try {
-        // delete funfact from array in the database
-        const result = await States.updateOne(
-            { stateCode: req.params.state.toUpperCase() },
-            { $pull: { funfacts: { $exists: true, $in: [null, ""] } } }
-        );
+        // find state to update funfact
+        const stateToDelete = await States.findOne({ stateCode: state.toUpperCase() }).exec();
+
+        // Check if funfact array exists. If so, check if the index exists. If not, return JSON saying they don't exist.
+        if (stateToDelete.funfacts !== null && stateToDelete.funfacts.length > 0 && Array.isArray(stateToDelete.funfacts)) {
+            // delete funfact from array
+            if (typeof stateToDelete.funfacts[index] !== 'undefined' && stateToDelete.funfacts.length > index){
+                stateToDelete.funfacts.splice(index, 1);
+            } else {
+                return res.status(400).json({ "message": `No Fun Fact found at that index for ${stateName}` });
+            }
+        } else {
+            return res.status(400).json({ "message": `No Fun Facts found for ${stateName}` });
+        }
+
+        // save and return response from mongodb
+        const result = await stateToDelete.save();
 
         res.json(result);
+
     } catch (error) {
         console.error(error);
         res.status(500).json({ "message": "Internal server error" });
